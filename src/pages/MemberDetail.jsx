@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../supabase'
+import { useAuth } from '../contexts/AuthContext'
 
 export default function MemberDetail() {
   const { id } = useParams()
+  const { synagogueId } = useAuth()
   const [member, setMember] = useState(null)
   const [debts, setDebts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -21,6 +23,7 @@ export default function MemberDetail() {
         .from('members')
         .select('*')
         .eq('id', id)
+        .eq('synagogue_id', synagogueId)
         .single()
       if (mErr) throw mErr
 
@@ -50,7 +53,8 @@ export default function MemberDetail() {
         member_id: id,
         amount: parseFloat(form.amount),
         description: form.description,
-        paid: false
+        paid: false,
+        synagogue_id: synagogueId
       })
       setForm({ amount: '', description: '' })
       setShowForm(false)
@@ -100,11 +104,7 @@ export default function MemberDetail() {
   }
 
   if (loading) {
-    return (
-      <div className="loading">
-        <div className="spinner"></div>
-      </div>
-    )
+    return <div className="loading"><div className="spinner"></div></div>
   }
 
   if (!member) {

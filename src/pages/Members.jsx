@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
+import { useAuth } from '../contexts/AuthContext'
 
 export default function Members() {
+  const { synagogueId } = useAuth()
   const [members, setMembers] = useState([])
   const [debtsSummary, setDebtsSummary] = useState({})
   const [loading, setLoading] = useState(true)
@@ -11,19 +13,23 @@ export default function Members() {
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
 
-  useEffect(() => { loadMembers() }, [])
+  useEffect(() => {
+    if (synagogueId) loadMembers()
+  }, [synagogueId])
 
   async function loadMembers() {
     try {
       const { data: m, error } = await supabase
         .from('members')
         .select('*')
+        .eq('synagogue_id', synagogueId)
         .order('name')
       if (error) throw error
 
       const { data: d } = await supabase
         .from('debts')
         .select('member_id, amount, paid')
+        .eq('synagogue_id', synagogueId)
 
       const summary = {}
       d?.forEach(debt => {
@@ -53,7 +59,8 @@ export default function Members() {
       await supabase.from('members').insert({
         name: form.name.trim(),
         phone: form.phone.trim(),
-        notes: form.notes.trim()
+        notes: form.notes.trim(),
+        synagogue_id: synagogueId
       })
       setForm({ name: '', phone: '', notes: '' })
       setShowForm(false)
@@ -81,11 +88,7 @@ export default function Members() {
   )
 
   if (loading) {
-    return (
-      <div className="loading">
-        <div className="spinner"></div>
-      </div>
-    )
+    return <div className="loading"><div className="spinner"></div></div>
   }
 
   return (

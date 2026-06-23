@@ -1,10 +1,12 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { useState, useEffect } from 'react'
-import { supabase, isConfigured } from './supabase'
+import { useAuth } from './contexts/AuthContext'
+import { isConfigured, supabase } from './supabase'
 import Login from './pages/Login'
+import SetupSynagogue from './pages/SetupSynagogue'
 import Dashboard from './pages/Dashboard'
 import Members from './pages/Members'
 import MemberDetail from './pages/MemberDetail'
+import AdminPanel from './pages/AdminPanel'
 import Navbar from './components/Navbar'
 
 function SetupNeeded() {
@@ -36,32 +38,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-key</pre>
 }
 
 function App() {
-  const [session, setSession] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-
-  useEffect(() => {
-    if (!isConfigured || !supabase) {
-      setLoading(false)
-      return
-    }
-
-    supabase.auth.getSession()
-      .then(({ data: { session } }) => {
-        setSession(session)
-        setLoading(false)
-      })
-      .catch(err => {
-        setError(err.message || 'שגיאת התחברות')
-        setLoading(false)
-      })
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-    })
-
-    return () => subscription.unsubscribe()
-  }, [])
+  const { session, profile, loading } = useAuth()
 
   if (!isConfigured || !supabase) {
     return <SetupNeeded />
@@ -75,31 +52,23 @@ function App() {
     )
   }
 
-  if (error) {
-    return (
-      <div className="login-page">
-        <div className="login-card">
-          <div className="login-icon">⚠️</div>
-          <h1>שגיאת התחברות</h1>
-          <p className="login-desc">{error}</p>
-          <button className="btn btn-google" onClick={() => window.location.reload()}>
-            נסה שוב
-          </button>
-        </div>
-      </div>
-    )
-  }
-
   if (!session) return <Login />
 
+  // User logged in but has no profile → setup page
+  if (!profile) return <SetupSynagogue />
+
+  // Main app - user has a profile
   return (
     <div className="app-layout">
-      <Navbar onLogout={() => supabase.auth.signOut()} />
+      <Navbar />
       <main className="main-content">
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/members" element={<Members />} />
           <Route path="/members/:id" element={<MemberDetail />} />
+          {profile.role === 'super_admin' && (
+            <Route path="/admin" element={<AdminPanel />} />
+          )}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

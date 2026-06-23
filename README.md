@@ -1,109 +1,141 @@
 # ניהול חובות בית הכנסת 🕍
 
-מערכת לניהול חובות של מתפללים לבית הכנסת. כוללת התחברות עם גוגל, ממשק ניהול מלא, ותמיכה מלאה בעברית ובמובייל.
+מערכת לניהול חובות של מתפללים לבית הכנסת. תומכת בריבוי בתי כנסת - כל בית כנסת מקבל סביבה נפרדת עם מנהלים משלו.
+
+**תכונות:**
+- התחברות עם גוגל
+- ניהול מתפללים וחובות
+- תמיכה בריבוי בתי כנסת (multi-tenant)
+- ממשק ניהול מערכת למנהל הראשי
+- Mobile-first, עברית מלאה
 
 ## טכנולוגיות
 
 - **React + Vite** - צד לקוח מהיר
 - **Supabase** (גרסה חינמית) - בסיס נתונים + אימות משתמשים
-- **Vercel** (גרסה חינמית) - אחסון האתר
+- **Vercel** או **Cloudflare Pages** (גרסה חינמית) - אחסון
 - **Mobile-first** - עובד מצויין בטלפון
 
 ## דרישות מוקדמות
 
 1. חשבון GitHub (חינם) - https://github.com/signup
 2. חשבון Supabase (חינם) - https://supabase.com
-3. חשבון Vercel (חינם) - https://vercel.com
+3. חשבון Vercel (חינם) - https://vercel.com (אופציונלי - לפרסום באינטרנט)
 
 ## הוראות הקמה (צעד אחר צעד)
 
 ### שלב 1: העלאת הקוד ל-GitHub
 
 ```bash
-# בתיקיית הפרויקט
-git init
+cd D:\Desktop\chovot
 git add .
-git commit -m "Initial commit - synagogue debt management"
-# צור ריפו חדש ב-GitHub ואז:
+git commit -m "אפליקציית ניהול חובות לבתי כנסת"
+git branch -M main
 git remote add origin https://github.com/שם-המשתמש/chovot.git
 git push -u origin main
 ```
 
-### שלב 2: הגדרת Supabase
+(תחליף את `שם-המשתמש` בשם משתמש GitHub שלך. צריך קודם ליצור ריפו חדש ב-GitHub.)
 
-1. היכנס לאתר supabase.com ולחץ **"Start a project"**
-2. התחבר עם GitHub
-3. לחץ על **"New project"**
-4. בחר ארגון (או צור אחד), תן שם לפרויקט (למשל: `chovot-synagogue`), בחר סיסמה חזקה ל-DB
-5. בחר אזור קרוב אליך ואת התכנית החינמית (**Free tier**)
-6. לחץ **"Create new project"** (זה לוקח כדקה)
+### שלב 2: הרצת סקריפט מסד הנתונים ב-Supabase
 
-#### הגדרת אימות גוגל:
+הרץ את הקובץ `supabase-schema.sql` ב-Supabase SQL Editor כדי ליצור את כל הטבלאות:
 
-7. בתפריט שמאלי, לך ל- **Authentication** → **Providers**
-8. מצא **Google** ולחץ עליו
-9. צריך ליצור Client ID ב-Google Cloud Console:
-   - לך ל- https://console.cloud.google.com/apis/credentials
-   - לחץ **Create Credentials** → **OAuth client ID**
-   - בחר **Web application**
-   - ב-**Authorized redirect URIs** הוסף: `https://הפרויקט-שלך.supabase.co/auth/v1/callback`
-     *(את ה-URL הזה תמצא בעמוד ההגדרות של Google Provider ב-Supabase)*
-   - העתק את ה-Client ID ו-Client Secret בחזרה ל-Supabase, שמור
+1. התחבר ל- **[supabase.com](https://supabase.com)** ובחר את הפרויקט שלך
+2. בתפריט השמאלי, לך ל- **SQL Editor**
+3. לחץ **New query**
+4. העתק את תוכן הקובץ `supabase-schema.sql` (שנמצא בתיקיית הפרויקט)
+5. הדבק בעורך ולחץ **▶️ Run**
 
-#### יצירת הטבלאות:
+#### אם כבר יש לך נתונים קיימים (מהגרסה הקודמת):
 
-10. בתפריט שמאלי, לך ל- **SQL Editor**
-11. לחץ **"New query"**
-12. העתק את תוכן הקובץ `supabase-schema.sql` מהפרויקט והדבק
-13. לחץ **"Run"** - זה ייצור את הטבלאות `members` ו-`debts`
+אחרי שהרצת את הסקריפט הראשי, הרץ גם את הסקריפט הזה כדי לשייך נתונים קיימים:
 
-#### קבלת מפתחות חיבור:
+```sql
+-- צור בית כנסת ראשון לנתונים הקיימים
+INSERT INTO synagogues (name) VALUES ('בית הכנסת שלי');
 
-14. בתפריט שמאלי, לך ל- **Project Settings** → **API**
-15. העתק את ה- **URL** (יש לשים ב-VITE_SUPABASE_URL)
-16. העתק את ה- **anon public key** (יש לשים ב-VITE_SUPABASE_ANON_KEY)
+-- עדכן חברים קיימים
+UPDATE members SET synagogue_id = (SELECT id FROM synagogues LIMIT 1)
+WHERE synagogue_id IS NULL;
+
+-- עדכן חובות קיימים
+UPDATE debts SET synagogue_id = (SELECT id FROM synagogues LIMIT 1)
+WHERE synagogue_id IS NULL;
+
+-- צור פרופיל מנהל למשתמש הראשון
+-- חשוב: החלף את ה-user_id בזהות המשתמש שלך
+-- (אפשר למצוא אותו ב- Authentication → Users)
+INSERT INTO profiles (user_id, email, name, synagogue_id, role)
+VALUES ('הכנס-את-user-id-שלך', 'your-email@gmail.com', 'השם שלך',
+  (SELECT id FROM synagogues LIMIT 1), 'super_admin');
+```
 
 ### שלב 3: הגדרת הפרויקט המקומי
 
-צור קובץ `.env` בתיקיית הפרויקט והכנס את המפתחות:
+צור קובץ `.env` בתיקיית הפרויקט:
 
 ```
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-public-key
 ```
 
-הרץ את השרת המקומי:
+הרץ:
 
 ```bash
 npm install
 npm run dev
 ```
 
-האתר יעלה בכתובת `http://localhost:5173` - תוכל לבדוק התחברות עם גוגל.
+### שלב 4: פרסום באינטרנט
 
-### שלב 4: העלאה ל-Vercel (חינם)
+#### אופציה א' - Vercel (קל ומהיר):
+1. לך ל- https://vercel.com, לחץ **Add New → Project**
+2. התחבר עם GitHub ובחר את הריפו `chovot`
+3. הוסף Environment Variables:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+4. לחץ **Deploy**
 
-1. התחבר ל- https://vercel.com
-2. לחץ **"Add New..."** → **"Project"**
-3. התחבר עם GitHub ובחר את הריפו `chovot`
-4. Vercel יזהה אוטומטית שזה פרויקט Vite (Framework Preset: Vite)
-5. תחת **"Environment Variables"**, הוסף:
-   - `VITE_SUPABASE_URL` - הערך מ-Supabase
-   - `VITE_SUPABASE_ANON_KEY` - הערך מ-Supabase
-6. לחץ **"Deploy"** - תוך דקות האתר יהיה באוויר!
+#### אופציה ב' - Cloudflare Pages (מומלץ, חינמי לגמרי):
+1. לך ל- https://dash.cloudflare.com → **Workers & Pages**
+2. לחץ **Create → Pages → Connect to Git**
+3. בחר את הריפו `chovot`
+4. הגדרות build:
+   - **Build command:** `npm run build`
+   - **Build output directory:** `dist`
+5. הוסף Environment Variables:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+6. לחץ **Save and Deploy**
+7. אחרי הדיפלוי, לך ל- **Custom domains** כדי לחבר דומיין משלך
 
-## שימוש
+## איך זה עובד - מערכת ריבוי בתי כנסת
 
-1. פתח את האתר (ב-Vercel או localhost)
-2. לחץ **"התחבר עם גוגל"**
-3. התחבר עם חשבון גוגל שלך
-4. בדשבורד תראה סיכום כללי
-5. לחץ **"מתפללים"** להוספת מתפללים
-6. לחץ על מתפלל כדי לנהל את החובות שלו
-7. סמן חוב כשולם ע"י לחיצה על ⬜ → ✅
+### תפקידים במערכת
+
+| תפקיד | הרשאות |
+|-------|---------|
+| **מנהל מערכת** (super_admin) | רואה הכל, מוסיף בתי כנסת ומנהלים |
+| **מנהל** (admin) | רואה ומנהל רק את בית הכנסת שלו |
+
+### זרימת עבודה
+
+1. **אתה (הראשון)**: נכנס → יוצר את בית הכנסת שלך → הופך למנהל מערכת
+2. **ניהול מערכת**: מלוח הניהול מוסיף בתי כנסת נוספים ומזמין מנהלים
+3. **מנהלים חדשים**: נכנסים עם גוגל → מקבלים גישה אוטומטית לבית הכנסת שלהם
+4. **בידוד נתונים**: כל בית כנסת רואה רק את המתפללים והחובות שלו
+
+### ניהול מערכת
+
+ממשק הניהול (זמין רק למנהל המערכת) מאפשר:
+- הוספת בתי כנסת חדשים
+- הוספת מנהלים לבתי כנסת
+- מחיקת בתי כנסת
+- צפייה בכל המנהלים
 
 ## עלויות
 
 - **Supabase Free Tier**: 500MB DB, 50K משתמשים, 2GB bandwidth
-- **Vercel Free Tier**: 100GB bandwidth, 100 שעות build/חודש
-- **סך הכול: 0 ש"ח לחודש** (מספיק לבית כנסת קטן-בינוני)
+- **Cloudflare Pages**: ללא הגבלת bandwidth, חינמי לגמרי
+- **סך הכול: 0 ש"ח לחודש** (מספיק לעשרות בתי כנסת)

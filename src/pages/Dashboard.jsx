@@ -1,28 +1,37 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
+import { useAuth } from '../contexts/AuthContext'
 
 export default function Dashboard() {
+  const { synagogueId, isSuperAdmin } = useAuth()
   const [stats, setStats] = useState({ members: 0, totalDebt: 0, paidDebt: 0, unpaidDebt: 0 })
   const [recentMembers, setRecentMembers] = useState([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [synagogue, setSynagogue] = useState(null)
 
   useEffect(() => {
-    loadData()
-  }, [])
+    if (synagogueId) loadData()
+  }, [synagogueId])
 
   async function loadData() {
     try {
-      const { count: membersCount, error: countErr } = await supabase
+      const { data: syn } = await supabase
+        .from('synagogues')
+        .select('*')
+        .eq('id', synagogueId)
+        .single()
+      setSynagogue(syn)
+
+      const { count: membersCount } = await supabase
         .from('members')
         .select('*', { count: 'exact', head: true })
-      if (countErr) throw countErr
+        .eq('synagogue_id', synagogueId)
 
-      const { data: debts, error: debtsErr } = await supabase
+      const { data: debts } = await supabase
         .from('debts')
         .select('amount, paid')
-      if (debtsErr) throw debtsErr
+        .eq('synagogue_id', synagogueId)
 
       const totalDebt = debts?.reduce((sum, d) => sum + Number(d.amount), 0) || 0
       const paidDebt = debts?.filter(d => d.paid).reduce((sum, d) => sum + Number(d.amount), 0) || 0
@@ -31,6 +40,7 @@ export default function Dashboard() {
       const { data: members } = await supabase
         .from('members')
         .select('*')
+        .eq('synagogue_id', synagogueId)
         .order('created_at', { ascending: false })
         .limit(5)
 
@@ -42,33 +52,20 @@ export default function Dashboard() {
       })
       setRecentMembers(members || [])
     } catch (err) {
-      setError(err.message)
+      console.error(err)
     } finally {
       setLoading(false)
     }
   }
 
   if (loading) {
-    return (
-      <div className="loading">
-        <div className="spinner"></div>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="error-page">
-        <h2>שגיאה בטעינת נתונים</h2>
-        <p>{error}</p>
-        <button className="btn" onClick={loadData}>נסה שוב</button>
-      </div>
-    )
+    return <div className="loading"><div className="spinner"></div></div>
   }
 
   return (
     <div className="dashboard">
       <h1>דשבורד</h1>
+      {synagogue && <p className="synagogue-badge">{synagogue.name}</p>}
 
       <div className="stats-grid">
         <div className="stat-card stat-members">
@@ -128,6 +125,18 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {isSuperAdmin && (
+        <div className="section">
+          <div className="section-header">
+            <h2>ניהול מערכת</h2>
+            <Link to="/admin" className="btn btn-sm">לפאנל ניהול</Link>
+          </div>
+          <div className="empty-state" style={{ padding: '16px' }}>
+            <p style={{ fontSize: '0.9rem' }}>אתה מנהל מערכת - יש לך גישה לכל בתי הכנסת</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,34 +1,121 @@
+-- ==========================================================
 -- הרצה בסביבת SQL של Supabase (SQL Editor)
--- י tworz את הטבלאות ומגדיר הרשאות
+-- יוצר טבלאות חדשות ומעדכן קיימות לתמיכה בריבוי בתי כנסת
+-- ==========================================================
 
--- טבלת מתפללים
-CREATE TABLE members (
+-- 1. טבלת בתי כנסת
+CREATE TABLE IF NOT EXISTS synagogues (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   name TEXT NOT NULL,
-  phone TEXT DEFAULT '',
-  notes TEXT DEFAULT '',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- טבלת חובות
-CREATE TABLE debts (
+-- 2. טבלת פרופילים (מחברת משתמש גוגל לבית הכנסת)
+CREATE TABLE IF NOT EXISTS profiles (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  member_id BIGINT REFERENCES members(id) ON DELETE CASCADE,
-  amount DECIMAL(10,2) NOT NULL,
-  description TEXT NOT NULL,
-  paid BOOLEAN DEFAULT FALSE,
+  user_id TEXT UNIQUE NOT NULL,
+  email TEXT NOT NULL,
+  name TEXT DEFAULT '',
+  synagogue_id BIGINT REFERENCES synagogues(id) ON DELETE SET NULL,
+  role TEXT DEFAULT 'admin' CHECK (role IN ('super_admin', 'admin')),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- הפעלת Row Level Security
-ALTER TABLE members ENABLE ROW LEVEL SECURITY;
-ALTER TABLE debts ENABLE ROW LEVEL SECURITY;
+-- 3. הוספת synagogue_id לטבלאות קיימות
+ALTER TABLE members ADD COLUMN IF NOT EXISTS synagogue_id BIGINT REFERENCES synagogues(id) ON DELETE CASCADE;
+ALTER TABLE debts ADD COLUMN IF NOT EXISTS synagogue_id BIGINT REFERENCES synagogues(id) ON DELETE CASCADE;
 
--- מדיניות: כל משתמש מחובר יכול לעשות הכל
-CREATE POLICY "authenticated_all_members"
+-- 4. אינדקסים
+CREATE INDEX IF NOT EXISTS idx_members_synagogue ON members(synagogue_id);
+CREATE INDEX IF NOT EXISTS idx_debts_synagogue ON debts(synagogue_id);
+CREATE INDEX IF NOT EXISTS idx_profiles_user ON profiles(user_id);
+CREATE INDEX IF NOT EXISTS idx_profiles_synagogue ON profiles(synagogue_id);
+
+-- 5. הפעלת RLS
+ALTER TABLE synagogues ENABLE ROW LEVEL SECURITY;
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+
+-- 6. מחיקת מדיניות ישנה ויצירת חדשה
+DROP POLICY IF EXISTS "authenticated_all_members" ON members;
+DROP POLICY IF EXISTS "authenticated_all_debts" ON debts;
+DROP POLICY IF EXISTS "profiles_own" ON profiles;
+DROP POLICY IF EXISTS "profiles_super_admin_all" ON profiles;
+DROP POLICY IF EXISTS "super_admin_all_synagogues" ON synagogues;
+
+-- Synagogues
+-- כל משתמש מחובר יכול ליצור בית כנסת חדש (להרשמה ראשונית)
+CREATE POLICY "anyone_insert_synagogue"
+  ON synagogues FOR INSERT TO authenticated
+  WITH CHECK (true);
+
+-- סופר אדמין יכול לעדכן ולמחוק
+CREATE POLICY "super_admin_all_synagogues"
+  ON synagogues FOR UPDATE TO authenticated
+  USING (EXISTS (SELECT 1 FROM profiles WHERE user_id = auth.uid()::text AND role = 'super_admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE user_id = auth.uid()::text AND role = 'super_admin'));
+
+CREATE POLICY "super_admin_delete_synagogue"
+  ON synagogues FOR DELETE TO authenticated
+  USING (EXISTS (SELECT 1 FROM profiles WHERE user_id = auth.uid()::text AND role = 'super_admin'));
+
+-- קריאה: סופר אדמין רואה הכל, רגילים רואים רק את שלהם
+CREATE POLICY "super_admin_read_synagogue"
+  ON synagogues FOR SELECT TO authenticated
+  USING (EXISTS (SELECT 1 FROM profiles WHERE user_id = auth.uid()::text AND role = 'super_admin'));
+
+CREATE POLICY "admin_read_own_synagogue"
+  ON synagogues FOR SELECT TO authenticated
+  USING (id IN (SELECT synagogue_id FROM profiles WHERE user_id = auth.uid()::text));
+
+-- Profiles: הרשאות גישה
+-- INSERT: כל משתמש יכול ליצור פרופיל משלו
+CREATE POLICY "profiles_insert_own"
+  ON profiles FOR INSERT TO authenticated
+  WITH CHECK (user_id = auth.uid()::text);
+
+-- SELECT: רואה פרופיל משלו, סופר אדמין רואה הכל
+CREATE POLICY "profiles_select_own"
+  ON profiles FOR SELECT TO authenticated
+  USING (user_id = auth.uid()::text OR EXISTS (
+    SELECT 1 FROM profiles WHERE user_id = auth.uid()::text AND role = 'super_admin'
+  ));
+
+-- UPDATE: יכול לעדכן פרופיל משלו, סופר אדמין יכול לעדכן הכל
+CREATE POLICY "profiles_update_own"
+  ON profiles FOR UPDATE TO authenticated
+  USING (user_id = auth.uid()::text)
+  WITH CHECK (user_id = auth.uid()::text);
+
+CREATE POLICY "profiles_update_super_admin"
+  ON profiles FOR UPDATE TO authenticated
+  USING (EXISTS (SELECT 1 FROM profiles WHERE user_id = auth.uid()::text AND role = 'super_admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE user_id = auth.uid()::text AND role = 'super_admin'));
+
+-- DELETE: סופר אדמין יכול למחוק כל פרופיל
+CREATE POLICY "profiles_delete_super_admin"
+  ON profiles FOR DELETE TO authenticated
+  USING (EXISTS (SELECT 1 FROM profiles WHERE user_id = auth.uid()::text AND role = 'super_admin'));
+
+-- Members: קרא/כתוב רק של בית הכנסת שלך, או הכל אם סופר אדמין
+CREATE POLICY "members_synagogue_access"
   ON members FOR ALL TO authenticated
-  USING (true) WITH CHECK (true);
+  USING (
+    synagogue_id IN (SELECT synagogue_id FROM profiles WHERE user_id = auth.uid()::text)
+    OR EXISTS (SELECT 1 FROM profiles WHERE user_id = auth.uid()::text AND role = 'super_admin')
+  )
+  WITH CHECK (
+    synagogue_id IN (SELECT synagogue_id FROM profiles WHERE user_id = auth.uid()::text)
+    OR EXISTS (SELECT 1 FROM profiles WHERE user_id = auth.uid()::text AND role = 'super_admin')
+  );
 
-CREATE POLICY "authenticated_all_debts"
+-- Debts: קרא/כתוב רק של בית הכנסת שלך, או הכל אם סופר אדמין
+CREATE POLICY "debts_synagogue_access"
   ON debts FOR ALL TO authenticated
-  USING (true) WITH CHECK (true);
+  USING (
+    synagogue_id IN (SELECT synagogue_id FROM profiles WHERE user_id = auth.uid()::text)
+    OR EXISTS (SELECT 1 FROM profiles WHERE user_id = auth.uid()::text AND role = 'super_admin')
+  )
+  WITH CHECK (
+    synagogue_id IN (SELECT synagogue_id FROM profiles WHERE user_id = auth.uid()::text)
+    OR EXISTS (SELECT 1 FROM profiles WHERE user_id = auth.uid()::text AND role = 'super_admin')
+  );
